@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gettextify"
 version = "0.1.0"
-description = "Автоматическая интернационализация строковых литералов Python на основе CatBoost"
+description = "Automatic internationalization of Python string literals using CatBoost"
 requires-python = ">=3.10"
 dependencies = [
     "catboost",

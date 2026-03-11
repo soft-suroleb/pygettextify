@@ -1,18 +1,18 @@
 """
-CLI утилиты gettextify.
+gettextify CLI.
 
-Использование:
+Usage:
     python -m gettextify <path> [--threshold 0.78] [--in-place] [--verbose]
 
-    <path> — .py-файл или директория.
-    Если передана директория, она обходится рекурсивно и обрабатываются
-    все найденные .py-файлы (подразумевается --inplace).
+    <path> — a .py file or directory.
+    If a directory is given, it is traversed recursively and all
+    .py files found are processed (implies --inplace).
 
-Пайплайн:
-    1) AST-парсинг файла → извлечение строковых литералов
-    2) Вычисление фичей для каждого литерала
-    3) Предсказание CatBoost — нужно ли оборачивать в _()
-    4) Трансформация исходного кода + добавление import gettext
+Pipeline:
+    1) AST parsing of the file -> extraction of string literals
+    2) Feature computation for each literal
+    3) CatBoost prediction — whether to wrap in _()
+    4) Source code transformation + adding import gettext
 """
 
 import argparse
@@ -26,7 +26,7 @@ from .transformer import add_gettext_import, wrap_strings
 
 
 def _collect_py_files(path: Path) -> list[Path]:
-    """Рекурсивно собирает все .py-файлы из директории."""
+    """Recursively collects all .py files from a directory."""
     return sorted(path.rglob("*.py"))
 
 
@@ -49,11 +49,11 @@ def process(
 
     if not candidates:
         if verbose:
-            print(f"  {filepath}: кандидатов не найдено, пропуск.")
+            print(f"  {filepath}: no candidates found, skipping.")
         return
 
     if verbose:
-        print(f"  Найдено литералов: {len(literals)}, кандидатов: {len(candidates)}")
+        print(f"  Found literals: {len(literals)}, candidates: {len(candidates)}")
 
     value_counts: dict[str, int] = {}
     for lit in candidates:
@@ -74,13 +74,13 @@ def process(
     to_wrap = [lit for lit, pred in zip(candidates, predictions) if pred]
 
     if verbose:
-        print(f"  Литералов для обёртки: {len(to_wrap)}")
+        print(f"  Literals to wrap: {len(to_wrap)}")
         for lit in to_wrap:
-            print(f"    строка {lit.lineno}: {lit.value!r}")
+            print(f"    line {lit.lineno}: {lit.value!r}")
 
     if not to_wrap:
         if verbose:
-            print(f"  {filepath}: модель не нашла строк для интернационализации.")
+            print(f"  {filepath}: model found no strings to internationalize.")
         return
 
     new_source = wrap_strings(source, to_wrap)
@@ -89,7 +89,7 @@ def process(
     if inplace:
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(new_source)
-        print(f"Файл {filepath} изменён, обёрнуто строк: {len(to_wrap)}")
+        print(f"File {filepath} modified, wrapped {len(to_wrap)} strings.")
     else:
         sys.stdout.write(new_source)
 
@@ -101,14 +101,14 @@ def process_directory(
     threshold: float = DEFAULT_THRESHOLD,
     verbose: bool = False,
 ):
-    """Рекурсивно обрабатывает все .py-файлы в директории (всегда inplace)."""
+    """Recursively processes all .py files in a directory (always in-place)."""
     py_files = _collect_py_files(Path(dirpath))
 
     if not py_files:
-        print(f"В директории {dirpath} не найдено .py-файлов.")
+        print(f"No .py files found in directory {dirpath}.")
         return
 
-    print(f"Найдено .py-файлов: {len(py_files)}")
+    print(f"Found .py files: {len(py_files)}")
 
     processed = 0
     for py_file in py_files:
@@ -124,35 +124,35 @@ def process_directory(
             )
             processed += 1
         except Exception as exc:
-            print(f"Ошибка при обработке {py_file}: {exc}", file=sys.stderr)
+            print(f"Error processing {py_file}: {exc}", file=sys.stderr)
 
-    print(f"\nОбработано файлов: {processed}/{len(py_files)}")
+    print(f"\nProcessed files: {processed}/{len(py_files)}")
 
 
 def main():
     p = argparse.ArgumentParser(
         prog="gettextify",
-        description="Автоматическая интернационализация строковых литералов Python",
+        description="Automatic internationalization of Python string literals",
     )
     p.add_argument(
         "path",
-        help="Путь к .py-файлу или директории (рекурсивный обход)",
+        help="Path to a .py file or directory (recursive traversal)",
     )
     p.add_argument(
         "--threshold", type=float, default=DEFAULT_THRESHOLD,
-        help=f"Порог вероятности (default {DEFAULT_THRESHOLD})",
+        help=f"Probability threshold (default {DEFAULT_THRESHOLD})",
     )
     p.add_argument(
         "--model", default=MODEL_PATH,
-        help="Путь к файлу модели (.cbm)",
+        help="Path to the model file (.cbm)",
     )
     p.add_argument(
         "--inplace", action="store_true",
-        help="Изменить файл на месте (без этого — вывод в stdout)",
+        help="Modify file in place (otherwise output to stdout)",
     )
     p.add_argument(
         "--verbose", "-v", action="store_true",
-        help="Подробный вывод",
+        help="Verbose output",
     )
     args = p.parse_args()
 
@@ -174,5 +174,5 @@ def main():
             verbose=args.verbose,
         )
     else:
-        print(f"Путь не найден: {args.path}", file=sys.stderr)
+        print(f"Path not found: {args.path}", file=sys.stderr)
         sys.exit(1)

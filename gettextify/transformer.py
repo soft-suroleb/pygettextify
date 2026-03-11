@@ -1,7 +1,7 @@
 """
-Трансформация исходного кода:
-  - оборачивание строковых литералов в _()
-  - добавление импорта gettext (если необходимо)
+Source code transformation:
+  - wrapping string literals in _()
+  - adding gettext import (if needed)
 """
 
 from __future__ import annotations
@@ -14,13 +14,13 @@ if TYPE_CHECKING:
 
 
 def wrap_strings(source: str, literals: list[StringLiteral]) -> str:
-    """Вставляет _( … ) вокруг указанных строковых литералов."""
+    """Inserts _( ... ) around the specified string literals."""
     if not literals:
         return source
 
     lines = source.splitlines(keepends=True)
 
-    # обрабатываем снизу-вверх / справа-налево, чтобы не сбивались смещения
+    # process bottom-up / right-to-left so offsets don't shift
     sorted_lits = sorted(
         literals,
         key=lambda l: (l.end_lineno, l.end_col_offset),
@@ -37,7 +37,7 @@ def wrap_strings(source: str, literals: list[StringLiteral]) -> str:
                 + line[lit.end_col_offset:]
             )
         else:
-            # многострочная строка
+            # multiline string
             end_idx = lit.end_lineno - 1
             end_line = lines[end_idx]
             lines[end_idx] = (
@@ -58,7 +58,7 @@ def wrap_strings(source: str, literals: list[StringLiteral]) -> str:
 
 
 def add_gettext_import(source: str) -> str:
-    """Добавляет ``from gettext import gettext as _``, если _ ещё не определён."""
+    """Adds ``from gettext import gettext as _`` if _ is not already defined."""
     if _has_gettext_setup(source):
         return source
 

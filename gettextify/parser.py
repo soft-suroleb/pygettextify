@@ -1,11 +1,11 @@
 """
-Извлечение строковых литералов из Python-файла с помощью AST.
+Extraction of string literals from a Python file using AST.
 
-Для каждого литерала определяется:
-  - позиция в исходном коде (line/col)
-  - используется ли с .format() или оператором %
-  - является ли docstring-ом
-  - обёрнут ли уже в _()
+For each literal the following is determined:
+  - position in source code (line/col)
+  - whether it is used with .format() or the % operator
+  - whether it is a docstring
+  - whether it is already wrapped in _()
 """
 
 import ast
@@ -33,7 +33,7 @@ def extract_strings(source: str) -> list[StringLiteral]:
     wrapped_ids: set[int] = set()
 
     for node in ast.walk(tree):
-        # --- docstrings (первый Expr(Constant(str)) в теле) ---
+        # --- docstrings (first Expr(Constant(str)) in the body) ---
         if isinstance(node, (ast.Module, ast.FunctionDef,
                              ast.AsyncFunctionDef, ast.ClassDef)):
             body = node.body
@@ -52,7 +52,7 @@ def extract_strings(source: str) -> list[StringLiteral]:
                     and isinstance(func.value.value, str)):
                 format_ids.add(id(func.value))
 
-            # уже обёрнуто в _()
+            # already wrapped in _()
             if isinstance(func, ast.Name) and func.id == '_':
                 for arg in node.args:
                     if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
@@ -63,7 +63,7 @@ def extract_strings(source: str) -> list[StringLiteral]:
             if isinstance(node.left, ast.Constant) and isinstance(node.left.value, str):
                 mod_ids.add(id(node.left))
 
-    # --- собираем литералы ---
+    # --- collect literals ---
     literals: list[StringLiteral] = []
     for node in ast.walk(tree):
         if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):

@@ -1,4 +1,4 @@
-"""Пример приложения для управления пользователями."""
+"""Example user management application."""
 
 import sys
 
