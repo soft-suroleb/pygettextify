@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gettextify"
+version = "0.1.0"
+description = "Автоматическая интернационализация строковых литералов Python на основе CatBoost"
+requires-python = ">=3.10"
+dependencies = [
+    "catboost",
+]
+
+[project.scripts]
+gettextify = "gettextify.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["gettextify*"]
+
+[tool.setuptools.package-data]
+gettextify = ["model/*.cbm"]
