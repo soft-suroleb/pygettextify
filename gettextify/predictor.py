@@ -6,7 +6,7 @@ from .features import FEATURE_NAMES
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "model")
 MODEL_PATH = os.path.join(MODEL_DIR, "catboost_model.cbm")
-DEFAULT_THRESHOLD = 0.78
+DEFAULT_THRESHOLD = 0.73
 
 
 def load_model(path: str | None = None) -> CatBoostClassifier:
