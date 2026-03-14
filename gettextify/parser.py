@@ -22,6 +22,7 @@ class StringLiteral:
     with_format: bool = False
     is_docstring: bool = False
     is_wrapped: bool = False
+    is_fstring_part: bool = False
 
 
 def extract_strings(source: str) -> list[StringLiteral]:
@@ -31,8 +32,15 @@ def extract_strings(source: str) -> list[StringLiteral]:
     mod_ids: set[int] = set()
     docstring_ids: set[int] = set()
     wrapped_ids: set[int] = set()
+    fstring_ids: set[int] = set()
 
     for node in ast.walk(tree):
+        # --- f-string parts (constants inside JoinedStr) ---
+        if isinstance(node, ast.JoinedStr):
+            for child in node.values:
+                if isinstance(child, ast.Constant) and isinstance(child.value, str):
+                    fstring_ids.add(id(child))
+
         # --- docstrings (first Expr(Constant(str)) in the body) ---
         if isinstance(node, (ast.Module, ast.FunctionDef,
                              ast.AsyncFunctionDef, ast.ClassDef)):
@@ -78,6 +86,7 @@ def extract_strings(source: str) -> list[StringLiteral]:
             with_format=(nid in format_ids or nid in mod_ids),
             is_docstring=(nid in docstring_ids),
             is_wrapped=(nid in wrapped_ids),
+            is_fstring_part=(nid in fstring_ids),
         ))
 
     return literals

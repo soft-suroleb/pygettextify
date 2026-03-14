@@ -44,7 +44,7 @@ def process(
     literals = extract_strings(source)
     candidates = [
         lit for lit in literals
-        if not lit.is_docstring and not lit.is_wrapped
+        if not lit.is_docstring and not lit.is_wrapped and not lit.is_fstring_part
     ]
 
     if not candidates:

@@ -87,6 +87,18 @@ def _looks_like_path(key: str) -> bool:
         return False
 
 
+_INNER_FORMAT_RE = re.compile(
+    r'%\([a-zA-Z_]\w*\)[sdifoxXeEgGcr]'
+    r'|%[YmdHMSfzZaAbBpIjUWwxXcG]'
+    r'|\{[a-zA-Z_]\w*(?:![rsaRS])?(?::[^}]*)?\}'
+    r'|\{\d+(?::[^}]*)?\}'
+)
+
+
+def _has_inner_format(key: str) -> bool:
+    return bool(_INNER_FORMAT_RE.search(key))
+
+
 def compute_features(
     key: str,
     with_format: bool,
@@ -104,7 +116,7 @@ def compute_features(
 
     return {
         "with_format": wf,
-        "with_inner_format": wf,
+        "with_inner_format": int(_has_inner_format(key)),
         "count": count,
         "length": length,
         "special_letters": special_letters,
