@@ -3,7 +3,7 @@
 import pytest
 
 from gettextify.parser import StringLiteral, extract_strings
-from gettextify.transformer import add_gettext_import, wrap_strings
+from gettextify.transformer import GRAY_COMMENT, add_gettext_import, mark_gray_strings, wrap_strings
 
 
 # ---------------------------------------------------------------------------
@@ -165,3 +165,57 @@ class TestAddGettextImportIdempotency:
         result1 = add_gettext_import(source)
         result2 = add_gettext_import(result1)
         assert result1 == result2
+
+
+# ---------------------------------------------------------------------------
+#  mark_gray_strings
+# ---------------------------------------------------------------------------
+
+class TestMarkGrayStrings:
+    def test_adds_comment_to_line(self):
+        source = 'x = "maybe"\n'
+        lits = extract_strings(source)
+        result = mark_gray_strings(source, lits)
+        assert GRAY_COMMENT.strip() in result
+        assert result.startswith('x = "maybe"')
+
+    def test_empty_literals_returns_unchanged(self):
+        source = 'x = "hello"\n'
+        result = mark_gray_strings(source, [])
+        assert result == source
+
+    def test_comment_added_only_once_per_line(self):
+        source = 'x, y = "a", "b"\n'
+        lits = extract_strings(source)
+        result = mark_gray_strings(source, lits)
+        assert result.count(GRAY_COMMENT.strip()) == 1
+
+    def test_does_not_duplicate_existing_comment(self):
+        comment = GRAY_COMMENT.strip()
+        source = f'x = "maybe"  {comment}\n'
+        lits = extract_strings(source)
+        result = mark_gray_strings(source, lits)
+        assert result.count(comment) == 1
+
+    def test_multiple_lines(self):
+        source = 'a = "foo"\nb = "bar"\n'
+        lits = extract_strings(source)
+        result = mark_gray_strings(source, lits)
+        lines = result.splitlines()
+        assert GRAY_COMMENT.strip() in lines[0]
+        assert GRAY_COMMENT.strip() in lines[1]
+
+    def test_preserves_other_lines(self):
+        source = 'x = 42\ny = "maybe"\nz = True\n'
+        lits = [l for l in extract_strings(source)]
+        result = mark_gray_strings(source, lits)
+        assert "x = 42" in result
+        assert "z = True" in result
+
+    def test_multiline_string_marks_all_lines(self):
+        source = 'x = """hello\nworld"""\n'
+        lits = extract_strings(source)
+        result = mark_gray_strings(source, lits)
+        lines = result.splitlines()
+        # both lines of the multiline string should be marked
+        assert any(GRAY_COMMENT.strip() in line for line in lines)

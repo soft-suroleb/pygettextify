@@ -14,7 +14,7 @@ import pytest
 
 from gettextify.features import compute_features
 from gettextify.parser import extract_strings
-from gettextify.predictor import predict
+from gettextify.predictor import LABEL_GRAY, LABEL_IN, LABEL_OUT, predict
 
 
 def _predict_one(
@@ -24,14 +24,14 @@ def _predict_one(
     with_format: bool = False,
     count: int = 1,
     global_count: int = 1,
-) -> bool:
+) -> str:
     features = compute_features(
         key, with_format=with_format, count=count, global_count=global_count,
     )
     return predict(model, [features])[0]
 
 
-def _predict_batch(model, keys: list[str], **kwargs) -> dict[str, bool]:
+def _predict_batch(model, keys: list[str], **kwargs) -> dict[str, str]:
     features = [
         compute_features(k, with_format=kwargs.get("with_format", False), count=1)
         for k in keys
@@ -53,7 +53,7 @@ class TestTechnicalStrings:
         "w",
     ])
     def test_encodings_and_mimetypes(self, model, text):
-        assert _predict_one(model, text) is False
+        assert _predict_one(model, text) != LABEL_IN
 
     @pytest.mark.parametrize("text", [
         "__init__",
@@ -62,7 +62,7 @@ class TestTechnicalStrings:
         "__all__",
     ])
     def test_dunder_names(self, model, text):
-        assert _predict_one(model, text) is False
+        assert _predict_one(model, text) != LABEL_IN
 
     @pytest.mark.parametrize("text", [
         "DEBUG",
@@ -71,7 +71,7 @@ class TestTechnicalStrings:
         "ERROR",
     ])
     def test_log_level_names(self, model, text):
-        assert _predict_one(model, text) is False
+        assert _predict_one(model, text) != LABEL_IN
 
     @pytest.mark.parametrize("text", [
         "config.yaml",
@@ -79,7 +79,7 @@ class TestTechnicalStrings:
         "src/main.py",
     ])
     def test_file_paths(self, model, text):
-        assert _predict_one(model, text) is False
+        assert _predict_one(model, text) != LABEL_IN
 
     @pytest.mark.parametrize("text", [
         "user_id",
@@ -88,20 +88,20 @@ class TestTechnicalStrings:
         "session_token",
     ])
     def test_snake_case_identifiers(self, model, text):
-        assert _predict_one(model, text) is False
+        assert _predict_one(model, text) != LABEL_IN
 
     @pytest.mark.parametrize("text", [
         "SELECT * FROM users",
         "INSERT INTO table",
     ])
     def test_sql_queries(self, model, text):
-        assert _predict_one(model, text) is False
+        assert _predict_one(model, text) != LABEL_IN
 
     def test_empty_string(self, model):
-        assert _predict_one(model, "") is False
+        assert _predict_one(model, "") != LABEL_IN
 
     def test_single_letter(self, model):
-        assert _predict_one(model, "x") is False
+        assert _predict_one(model, "x") != LABEL_IN
 
     @pytest.mark.parametrize("text", [
         "GET",
@@ -110,7 +110,7 @@ class TestTechnicalStrings:
         "PATCH",
     ])
     def test_http_methods(self, model, text):
-        assert _predict_one(model, text) is False
+        assert _predict_one(model, text) != LABEL_IN
 
 
 # ---------------------------------------------------------------------------
@@ -119,13 +119,15 @@ class TestTechnicalStrings:
 
 class TestFormatStrings:
     def test_strftime_format(self, model):
-        assert _predict_one(model, "%Y-%m-%d %H:%M:%S") is False
+        assert _predict_one(model, "%Y-%m-%d %H:%M:%S") != LABEL_IN
 
     def test_brace_format_with_flag(self, model):
-        assert _predict_one(model, "Hello {name}!", with_format=True) is False
+        # "Hello {name}!" with_format=True: the model sees it as a format template,
+        # not necessarily user-facing text — expect NOT IN.
+        assert _predict_one(model, "Hello {name}!", with_format=True) != LABEL_IN
 
     def test_percent_named_format(self, model):
-        assert _predict_one(model, "%(asctime)s [%(levelname)s]") is False
+        assert _predict_one(model, "%(asctime)s [%(levelname)s]") != LABEL_IN
 
 
 # ---------------------------------------------------------------------------
@@ -134,19 +136,19 @@ class TestFormatStrings:
 
 class TestEdgeCases:
     def test_url_string(self, model):
-        assert _predict_one(model, "https://example.com/api/v1") is False
+        assert _predict_one(model, "https://example.com/api/v1") != LABEL_IN
 
     def test_json_string(self, model):
-        assert _predict_one(model, '{"key": "value"}') is False
+        assert _predict_one(model, '{"key": "value"}') != LABEL_IN
 
     def test_html_tag(self, model):
-        assert _predict_one(model, "<div class='container'>") is False
+        assert _predict_one(model, "<div class='container'>") != LABEL_IN
 
     def test_regex_pattern(self, model):
-        assert _predict_one(model, r"^\d{3}-\d{4}$") is False
+        assert _predict_one(model, r"^\d{3}-\d{4}$") != LABEL_IN
 
     def test_version_string(self, model):
-        assert _predict_one(model, "1.0.0") is False
+        assert _predict_one(model, "1.0.0") != LABEL_IN
 
 
 # ---------------------------------------------------------------------------
@@ -154,17 +156,19 @@ class TestEdgeCases:
 # ---------------------------------------------------------------------------
 
 class TestThresholdBehavior:
-    def test_zero_threshold_all_positive(self, model):
+    def test_zero_threshold_in_all_positive(self, model):
+        """threshold_in=0, threshold_out=1 → everything is IN (P(IN) always ≥ 0)."""
         features = [compute_features("anything", with_format=False, count=1)]
-        result = predict(model, features, threshold=0.0)
-        assert all(result)
+        result = predict(model, features, threshold_in=0.0, threshold_out=1.0)
+        assert all(r == LABEL_IN for r in result)
 
-    def test_one_threshold_all_negative(self, model):
+    def test_one_threshold_in_no_positive(self, model):
+        """threshold_in=1 → P(IN) never ≥ 1, so no IN labels."""
         features = [compute_features("Hello world!", with_format=False, count=1)]
         result = predict(model, features, threshold=1.0)
-        assert not any(result)
+        assert not any(r == LABEL_IN for r in result)
 
-    def test_high_threshold_fewer_positives(self, model):
+    def test_high_threshold_in_fewer_in_labels(self, model):
         features = [
             compute_features("Click here.", with_format=False, count=1),
             compute_features("DEBUG", with_format=False, count=1),
@@ -172,7 +176,9 @@ class TestThresholdBehavior:
         ]
         low = predict(model, features, threshold=0.1)
         high = predict(model, features, threshold=0.99)
-        assert sum(low) >= sum(high)
+        count_in_low = sum(1 for r in low if r == LABEL_IN)
+        count_in_high = sum(1 for r in high if r == LABEL_IN)
+        assert count_in_low >= count_in_high
 
 
 # ---------------------------------------------------------------------------
@@ -205,8 +211,8 @@ class TestPipelineIntegration:
             'print("Welcome to the app!")\n'
         )
         pred_map = self._run_pipeline(model, source)
-        assert pred_map.get("utf-8") is False
-        assert pred_map.get("debug") is False
+        assert pred_map.get("utf-8") != LABEL_IN
+        assert pred_map.get("debug") != LABEL_IN
 
     def test_docstrings_not_in_candidates(self, model):
         source = (
@@ -263,7 +269,7 @@ class TestPipelineIntegration:
             '    return f"Hello, {name}!"\n'
         )
         pred_map = self._run_pipeline(model, source)
-        assert pred_map.get("utf-8") is False
+        assert pred_map.get("utf-8") != LABEL_IN
         assert "Greet the user." not in pred_map
 
     def test_multiline_string_detection(self, model):

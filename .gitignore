@@ -34,3 +34,5 @@ catboost_info/
 
 # Model binaries
 *.cbm
+
+.hidden/

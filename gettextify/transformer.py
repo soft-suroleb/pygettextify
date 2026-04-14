@@ -1,6 +1,7 @@
 """
 Source code transformation:
   - wrapping string literals in _()
+  - marking gray-zone literals with a review comment
   - adding gettext import (if needed)
 """
 
@@ -11,6 +12,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .parser import StringLiteral
+
+GRAY_COMMENT = "  # i18n: review"
 
 
 def wrap_strings(source: str, literals: list[StringLiteral]) -> str:
@@ -53,6 +56,34 @@ def wrap_strings(source: str, literals: list[StringLiteral]) -> str:
                 + "_("
                 + start_line[lit.col_offset:]
             )
+
+    return "".join(lines)
+
+
+def mark_gray_strings(source: str, literals: list[StringLiteral]) -> str:
+    """Appends ``# i18n: review`` comment to lines containing gray literals.
+
+    Each affected line gets the comment appended at most once, even if
+    multiple gray literals appear on the same line.
+    """
+    if not literals:
+        return source
+
+    lines = source.splitlines(keepends=True)
+
+    # Collect the set of 0-based line indices that contain a gray literal.
+    gray_line_indices: set[int] = set()
+    for lit in literals:
+        for lineno in range(lit.lineno, lit.end_lineno + 1):
+            gray_line_indices.add(lineno - 1)
+
+    for idx in sorted(gray_line_indices):
+        line = lines[idx]
+        if GRAY_COMMENT.strip() not in line:
+            # Strip trailing newline, append comment, restore newline.
+            stripped = line.rstrip("\n")
+            newline = line[len(stripped):]
+            lines[idx] = stripped + GRAY_COMMENT + newline
 
     return "".join(lines)
 

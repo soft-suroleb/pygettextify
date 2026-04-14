@@ -79,7 +79,12 @@ def _is_html(key: str) -> bool:
         return False
 
 
+_WIN_PATH_RE = re.compile(r'^[A-Za-z]:\\')
+
+
 def _looks_like_path(key: str) -> bool:
+    if _WIN_PATH_RE.match(key):
+        return True
     try:
         p = Path(key)
         return len(p.parts) > 1 or p.suffix != ""

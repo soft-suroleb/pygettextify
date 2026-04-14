@@ -15,14 +15,24 @@ Pipeline:
     4) Source code transformation + adding import gettext
 """
 
+from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path
 
 from .features import compute_features
 from .parser import extract_strings
-from .predictor import DEFAULT_THRESHOLD, MODEL_PATH, load_model, predict
-from .transformer import add_gettext_import, wrap_strings
+from .predictor import (
+    DEFAULT_THRESHOLD_IN,
+    DEFAULT_THRESHOLD_OUT,
+    LABEL_GRAY,
+    LABEL_IN,
+    MODEL_PATH,
+    load_model,
+    predict,
+)
+from .transformer import add_gettext_import, mark_gray_strings, wrap_strings
 
 
 def _collect_py_files(path: Path) -> list[Path]:
@@ -34,7 +44,9 @@ def process(
     filepath: str,
     *,
     model_path: str = MODEL_PATH,
-    threshold: float = DEFAULT_THRESHOLD,
+    threshold: float | None = None,
+    threshold_in: float = DEFAULT_THRESHOLD_IN,
+    threshold_out: float = DEFAULT_THRESHOLD_OUT,
     inplace: bool = False,
     verbose: bool = False,
 ):
@@ -69,27 +81,39 @@ def process(
     ]
 
     model = load_model(model_path)
-    predictions = predict(model, features_list, threshold)
+    # threshold shorthand: overrides both threshold_in and threshold_out
+    if threshold is not None:
+        threshold_in = threshold
+        threshold_out = threshold
+    labels = predict(model, features_list, threshold_in=threshold_in, threshold_out=threshold_out)
 
-    to_wrap = [lit for lit, pred in zip(candidates, predictions) if pred]
+    to_wrap = [lit for lit, lbl in zip(candidates, labels) if lbl == LABEL_IN]
+    to_gray = [lit for lit, lbl in zip(candidates, labels) if lbl == LABEL_GRAY]
 
     if verbose:
-        print(f"  Literals to wrap: {len(to_wrap)}")
+        print(f"  IN (to wrap): {len(to_wrap)}, GRAY (to review): {len(to_gray)}")
         for lit in to_wrap:
-            print(f"    line {lit.lineno}: {lit.value!r}")
+            print(f"    [IN]   line {lit.lineno}: {lit.value!r}")
+        for lit in to_gray:
+            print(f"    [GRAY] line {lit.lineno}: {lit.value!r}")
 
-    if not to_wrap:
+    if not to_wrap and not to_gray:
         if verbose:
             print(f"  {filepath}: model found no strings to internationalize.")
         return
 
     new_source = wrap_strings(source, to_wrap)
-    new_source = add_gettext_import(new_source)
+    new_source = mark_gray_strings(new_source, to_gray)
+    if to_wrap:
+        new_source = add_gettext_import(new_source)
 
     if inplace:
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(new_source)
-        print(f"File {filepath} modified, wrapped {len(to_wrap)} strings.")
+        print(
+            f"File {filepath} modified: wrapped {len(to_wrap)} strings,"
+            f" marked {len(to_gray)} for review."
+        )
     else:
         sys.stdout.write(new_source)
 
@@ -98,7 +122,9 @@ def process_directory(
     dirpath: str,
     *,
     model_path: str = MODEL_PATH,
-    threshold: float = DEFAULT_THRESHOLD,
+    threshold: float | None = None,
+    threshold_in: float = DEFAULT_THRESHOLD_IN,
+    threshold_out: float = DEFAULT_THRESHOLD_OUT,
     verbose: bool = False,
 ):
     """Recursively processes all .py files in a directory (always in-place)."""
@@ -119,6 +145,8 @@ def process_directory(
                 str(py_file),
                 model_path=model_path,
                 threshold=threshold,
+                threshold_in=threshold_in,
+                threshold_out=threshold_out,
                 inplace=True,
                 verbose=verbose,
             )
@@ -139,8 +167,18 @@ def main():
         help="Path to a .py file or directory (recursive traversal)",
     )
     p.add_argument(
-        "--threshold", type=float, default=DEFAULT_THRESHOLD,
-        help=f"Probability threshold (default {DEFAULT_THRESHOLD})",
+        "--threshold", type=float, default=None,
+        help="Shorthand: sets both --threshold-in and --threshold-out to this value",
+    )
+    p.add_argument(
+        "--threshold-in", type=float, default=DEFAULT_THRESHOLD_IN,
+        dest="threshold_in",
+        help=f"P(IN) >= threshold → wrap in _()  (default {DEFAULT_THRESHOLD_IN})",
+    )
+    p.add_argument(
+        "--threshold-out", type=float, default=DEFAULT_THRESHOLD_OUT,
+        dest="threshold_out",
+        help=f"P(IN) < 1-threshold → skip; else mark as GRAY  (default {DEFAULT_THRESHOLD_OUT})",
     )
     p.add_argument(
         "--model", default=MODEL_PATH,
@@ -163,6 +201,8 @@ def main():
             str(target),
             model_path=args.model,
             threshold=args.threshold,
+            threshold_in=args.threshold_in,
+            threshold_out=args.threshold_out,
             verbose=args.verbose,
         )
     elif target.is_file():
@@ -170,6 +210,8 @@ def main():
             str(target),
             model_path=args.model,
             threshold=args.threshold,
+            threshold_in=args.threshold_in,
+            threshold_out=args.threshold_out,
             inplace=args.inplace,
             verbose=args.verbose,
         )
