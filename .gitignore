@@ -32,7 +32,8 @@ Desktop.ini
 # CatBoost
 catboost_info/
 
-# Model binaries
+# Model binaries (committed model is tracked via explicit negation)
 *.cbm
+!gettextify/model/catboost_model.cbm
 
 .hidden/
