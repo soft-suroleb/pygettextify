@@ -1,15 +1,19 @@
 """
 gettextify CLI.
 
-Usage:
-    python -m gettextify <path> [--threshold 0.78] [--in-place] [--verbose]
+Usage
+-----
+gettextify <path> [--threshold 0.78] [--inplace] [--verbose]
+    Wrap translatable strings in _() and annotate gray-zone strings with
+    ``# i18n: review``.  <path> may be a .py file or a directory
+    (recursive; always in-place for directories).
 
-    <path> — a .py file or directory.
-    If a directory is given, it is traversed recursively and all
-    .py files found are processed (implies --inplace).
+gettextify scan <path>
+    Scan a .py file or directory recursively and print every line that
+    contains the gray-zone marker ``# i18n: review``.
 
-Pipeline:
-    1) AST parsing of the file -> extraction of string literals
+Pipeline (mark):
+    1) AST parsing → extraction of string literals
     2) Feature computation for each literal
     3) CatBoost prediction — whether to wrap in _()
     4) Source code transformation + adding import gettext
@@ -32,7 +36,9 @@ from .predictor import (
     load_model,
     predict,
 )
-from .transformer import add_gettext_import, mark_gray_strings, wrap_strings
+from .transformer import GRAY_COMMENT, add_gettext_import, mark_gray_strings, wrap_strings
+
+GRAY_MARKER = GRAY_COMMENT.strip()  # "# i18n: review"
 
 
 def _collect_py_files(path: Path) -> list[Path]:
@@ -157,10 +163,56 @@ def process_directory(
     print(f"\nProcessed files: {processed}/{len(py_files)}")
 
 
-def main():
+def scan_file(filepath: Path) -> list[tuple[int, str]]:
+    """Returns a list of (lineno, line) pairs that contain the gray-zone marker."""
+    try:
+        lines = filepath.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return []
+    return [
+        (i + 1, line)
+        for i, line in enumerate(lines)
+        if GRAY_MARKER in line
+    ]
+
+
+def scan_path(target: Path) -> None:
+    """Scans a file or directory and prints all lines with the gray-zone comment."""
+    if target.is_file():
+        py_files = [target]
+    else:
+        py_files = _collect_py_files(target)
+        if not py_files:
+            print(f"No .py files found in {target}")
+            return
+
+    total = 0
+    for py_file in py_files:
+        matches = scan_file(py_file)
+        for lineno, line in matches:
+            print(f"{py_file}:{lineno}: {line}")
+            total += 1
+
+    if total == 0:
+        print("No gray-zone comments found.")
+    else:
+        print(f"\nTotal: {total} line(s) with '{GRAY_MARKER}'")
+
+
+def _build_scan_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="gettextify scan",
+        description=f"Find all lines marked with '{GRAY_MARKER}' (gray-zone review comment)",
+    )
+    p.add_argument("path", help="Path to a .py file or directory to scan")
+    return p
+
+
+def _build_mark_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="gettextify",
         description="Automatic internationalization of Python string literals",
+        epilog="Use 'gettextify scan <path>' to find existing gray-zone comments.",
     )
     p.add_argument(
         "path",
@@ -192,8 +244,21 @@ def main():
         "--verbose", "-v", action="store_true",
         help="Verbose output",
     )
-    args = p.parse_args()
+    return p
 
+
+def main():
+    # Dispatch to scan subcommand when the first argument is "scan".
+    if len(sys.argv) > 1 and sys.argv[1] == "scan":
+        args = _build_scan_parser().parse_args(sys.argv[2:])
+        target = Path(args.path)
+        if not target.exists():
+            print(f"Path not found: {args.path}", file=sys.stderr)
+            sys.exit(1)
+        scan_path(target)
+        return
+
+    args = _build_mark_parser().parse_args()
     target = Path(args.path)
 
     if target.is_dir():
